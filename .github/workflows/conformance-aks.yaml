@@ -451,6 +451,57 @@ jobs:
         run: |
           mkdir -p cilium-junits
 
+      - name: Debug steps
+        run: |
+          echo "Pods:"
+          kubectl get pods -o wide --all-namespaces
+          echo "External pods:"
+          kubectl get pods -o wide -l app=nginx --all-namespaces
+          echo "All nodes:"
+          kubectl get nodes -o wide
+          echo "Services:"
+          kubectl get services -o wide --all-namespaces
+          echo "Endpoints of the headless service:"
+          kubectl -n external get endpoints nginx -o wide
+          NODE=$(kubectl get nodes -o name | sed 's@.*/@@' | head -n 3 | tail -n 1)
+          echo "Scheduling curl pods on node $NODE"
+          echo "Trying to ping ${{ steps.external_targets.outputs.ipv4_external_target }}"
+          kubectl run curl-1 --rm --image=badouralix/curl-jq -i --labels='kind=client' --overrides="{\"apiVersion\": \"v1\", \"spec\": {\"nodeName\": \"$NODE\"}}" -- sh -c 'sleep 10; ping -c3 ${{ steps.external_targets.outputs.ipv4_external_target }}' || echo "Exit code $?"
+          sleep 20
+          echo "Trying to curl http://${{ steps.external_targets.outputs.ipv4_external_target }}"
+          kubectl run curl-2 --rm --image=badouralix/curl-jq -i --labels='kind=client' --overrides="{\"apiVersion\": \"v1\", \"spec\": {\"nodeName\": \"$NODE\"}}" -- sh -c 'sleep 10; curl -vv http://${{ steps.external_targets.outputs.ipv4_external_target }}' || echo "Exit code $?"
+          sleep 20
+          echo "Trying to nslookup ${{ steps.external_targets.outputs.external_target_name }}"
+          kubectl run curl-3 --rm --image=badouralix/curl-jq -i --labels='kind=client' --overrides="{\"apiVersion\": \"v1\", \"spec\": {\"nodeName\": \"$NODE\"}}" -- sh -c 'sleep 10; nslookup ${{ steps.external_targets.outputs.external_target_name }}' || echo "Exit code $?"
+          sleep 20
+          echo "Trying to curl http://${{ steps.external_targets.outputs.external_target_name }}"
+          kubectl run curl-4 --rm --image=badouralix/curl-jq -i --labels='kind=client' --overrides="{\"apiVersion\": \"v1\", \"spec\": {\"nodeName\": \"$NODE\"}}" -- sh -c 'sleep 10; curl -vv http://${{ steps.external_targets.outputs.external_target_name }}' || echo "Exit code $?"
+          sleep 20
+
+          echo "Applying the egress policy"
+          kubectl create namespace cilium-test-1
+          kubectl -n cilium-test-1 apply -f cilium-cli/connectivity/builder/manifests/client-egress-to-entities-world.yaml
+
+          echo "Trying to ping ${{ steps.external_targets.outputs.ipv4_external_target }}"
+          kubectl -n cilium-test-1 run curl-5 --rm --image=badouralix/curl-jq -i --labels='kind=client' --overrides="{\"apiVersion\": \"v1\", \"spec\": {\"nodeName\": \"$NODE\"}}" -- sh -c 'sleep 10; ping -c3 ${{ steps.external_targets.outputs.ipv4_external_target }}' || echo "Exit code $?"
+          sleep 20
+          echo "Trying to curl http://${{ steps.external_targets.outputs.ipv4_external_target }}"
+          kubectl -n cilium-test-1 run curl-6 --rm --image=badouralix/curl-jq -i --labels='kind=client' --overrides="{\"apiVersion\": \"v1\", \"spec\": {\"nodeName\": \"$NODE\"}}" -- sh -c 'sleep 10; curl -vv http://${{ steps.external_targets.outputs.ipv4_external_target }}' || echo "Exit code $?"
+          sleep 20
+          echo "Trying to nslookup ${{ steps.external_targets.outputs.external_target_name }}"
+          kubectl -n cilium-test-1 run curl-7 --rm --image=badouralix/curl-jq -i --labels='kind=client' --overrides="{\"apiVersion\": \"v1\", \"spec\": {\"nodeName\": \"$NODE\"}}" -- sh -c 'sleep 10; nslookup ${{ steps.external_targets.outputs.external_target_name }}' || echo "Exit code $?"
+          sleep 20
+          echo "Trying to curl http://${{ steps.external_targets.outputs.external_target_name }}"
+          kubectl -n cilium-test-1 run curl-8 --rm --image=badouralix/curl-jq -i --labels='kind=client' --overrides="{\"apiVersion\": \"v1\", \"spec\": {\"nodeName\": \"$NODE\"}}" -- sh -c 'sleep 10; curl -vv http://${{ steps.external_targets.outputs.external_target_name }}' || echo "Exit code $?"
+          sleep 20
+
+          echo "ipcache:"
+          CILIUM_POD=$(kubectl -n kube-system get pod -l k8s-app=cilium --field-selector spec.nodeName="$NODE" -o jsonpath='{.items[0].metadata.name}')
+          kubectl -n kube-system exec "$CILIUM_POD" -- cilium-dbg bpf ipcache list
+
+          echo "Deleting the egress policy"
+          kubectl -n cilium-test-1 delete ciliumnetworkpolicy/client-egress-to-entities-world
+
       - name: Run concurrent connectivity test (${{ join(matrix.*, ', ') }})
         id: run-tests
         run: |
