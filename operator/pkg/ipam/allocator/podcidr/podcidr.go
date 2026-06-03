@@ -350,6 +350,10 @@ func syncToK8s(logger *slog.Logger, nodeGetterUpdater allocator.CiliumNodeGetter
 func (n *NodesPodCIDRManager) Upsert(node *v2.CiliumNode) {
 	n.Mutex.Lock()
 	defer n.Mutex.Unlock()
+	n.logger.Warn(
+		"Node Upsert",
+		logfields.NodeName, node.ObjectMeta.Name,
+	)
 	n.upsertLocked(node)
 }
 
