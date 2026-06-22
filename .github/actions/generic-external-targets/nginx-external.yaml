@@ -77,6 +77,10 @@ spec:
         cilium.io/no-schedule: "true"
         kubernetes.io/hostname: "$EXTERNAL_NODE"
       tolerations:
+      - key: "cilium.io/no-schedule"
+        operator: "Equal"
+        value: "true"
+        effect: "NoSchedule"
       - key: "ignore-taint.cluster-autoscaler.kubernetes.io/cilium-agent-not-ready"
         operator: "Equal"
         value: "true"

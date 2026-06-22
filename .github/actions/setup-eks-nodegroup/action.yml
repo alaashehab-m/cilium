@@ -68,9 +68,17 @@ runs:
           subnets:
            - $SUBNET
           taints:
-           - key: "node.cilium.io/agent-not-ready"
+           - key: "cilium.io/no-schedule"
              value: "true"
-             effect: "NoExecute"
+             effect: "NoSchedule"
+          labels:
+            cilium.io/no-schedule: "true"
+          # Manually inject a dummy CNI configuration to let the Kubelet turn
+          # ready. This is necessary as otherwise the node creation would
+          # never complete, given that Cilium is intentionally not scheduled
+          # on these nodes.
+          preBootstrapCommands:
+          - "echo '{ \"cniVersion\": \"0.3.1\", \"name\": \"dummy\", \"type\": \"dummy-cni\", \"log-file\": \"/var/run/dummy.log\" }' > /etc/cni/net.d/05-dummy.conf"
         - name: ng-arm64
           instanceTypes:
            - t4g.medium
